@@ -5,78 +5,52 @@ library(readr)
 #               sep = "\t", na.strings = "")
 # View(data %>% filter(P <= 0.0005))
 
-gwas_results <- list()
-snp_count <- 0
-for (chr in 1:22){
-  gwas_snp_table <- fread(paste0("./data/LDL/GWAS/output/hapmap3_snp/irish_snp_assoc/plink_gwas_ldl_irish_chr",
-                                  as.character(chr),
-                                  ".assoc.LDL.glm.linear"))
-  gwas_snp_table$P <- as.numeric(gwas_snp_table$P)
-  gwas_snp_table_sub <- gwas_snp_table %>% filter(P < 0.0005)
-  gwas_results[[paste0("chr",as.character(chr))]] <- gwas_snp_table_sub$ID
-  snp_count <- snp_count + length(gwas_snp_table_sub$ID)
-}
-snp_count
+#################################### GWAS ######################################
+irish_gwas_results <- process_gwas_results("./data/LDL/GWAS/output/hapmap3_snp/", "irish")
+british_gwas_results <- process_gwas_results("./data/LDL/GWAS/output/hapmap3_snp/", "british")
+irish_gwas_results$snp_count
+british_gwas_results$snp_count
 
-british_gwas_results <- list()
-british_snp_count <- 0
-for (chr in 1:22){
-  british_gwas_snp_table <- fread(paste0("./data/LDL/GWAS/output/hapmap3_snp/british_snp_assoc/plink_gwas_ldl_british_chr",
-                                 as.character(chr),
-                                 ".assoc.LDL.glm.linear"))
-  british_gwas_snp_table$P <- as.numeric(british_gwas_snp_table$P)
-  british_gwas_snp_table_sub <- british_gwas_snp_table %>% filter(P < 0.0005)
-  british_gwas_results[[paste0("chr",as.character(chr))]] <- british_gwas_snp_table_sub$ID
-  british_snp_count <- british_snp_count + length(british_gwas_snp_table_sub$ID)
-}
-british_snp_count
-
-################################## British #####################################
-
-british_chr_snp_list <- list()
-british_snp_count <- 0
-for (chr in 1:22){
-  clump_snp_table <- fread(paste0("./data/LDL/clump/british_snp_clump/ldl_british_chr",
-                                  as.character(chr),
-                                  "_plink_clumped.clumps"))
-  british_chr_snp_list[[paste0("chr",as.character(chr))]] <- clump_snp_table$ID
-  british_snp_count <- british_snp_count + length(clump_snp_table$ID)
-}
-
-############################### British Irish ##################################
-
-british_irish_chr_snp_list <- list()
-british_irish_snp_count <- 0
-for (chr in 1:22){
-  clump_snp_table <- fread(paste0("./data/LDL/clump/british_irish_snp_clump/ldl_british_irish_chr",
-                                  as.character(chr),
-                                  "_plink_clumped.clumps"))
-  british_irish_chr_snp_list[[paste0("chr",as.character(chr))]] <- clump_snp_table$ID
-  british_irish_snp_count <- british_irish_snp_count + length(clump_snp_table$ID)
-}
-british_irish_snp_count
-
+################################## Clumped #####################################
+british_clumped_snps <- process_clumped_snps("./data/LDL/clump/", "british", chromosomes = 1:22)
+british_irish_clumped_snps <- process_clumped_snps("./data/LDL/clump/", "british_irish", chromosomes = 1:22)
+british_irish_clumped_snps$snp_count
+british_clumped_snps$snp_count
 
 ################################ Inspection ####################################
 
-irish_chr_snps_all_sig_005 <- Reduce(c, gwas_results)
-british_chr_snps_all_sig_0005 <- Reduce(c, british_gwas_results)
-length(irish_chr_snps_all_sig_005)
-# 5359
-length(british_chr_snps_all_sig_0005)
-# 26530
-length(intersect(irish_chr_snps_all_sig_005, british_chr_snps_all_sig_0005))
-# 768
+irish_chr_snps_all_sig_0005 <- Reduce(c, irish_gwas_results$results)
+british_chr_snps_all_sig_0005 <- Reduce(c, british_gwas_results$results)
 
-british_chr_snps <- Reduce(c, british_chr_snp_list)
-length(intersect(irish_chr_snps_all_sig_005, british_chr_snps))
-# 158
-length(british_chr_snps)
-# 3256
+length(intersect(irish_chr_snps_all_sig_0005, british_chr_snps_all_sig_0005))
+# 300
 
-british_irish_chr_snps <- Reduce(c, british_irish_chr_snp_list)
-length(intersect(irish_chr_snps_all_sig_005, british_irish_chr_snps))
-# 167
-length(british_irish_chr_snps)
-# 3336
+chr_snp_list <- irish_gwas_results$results
+phenotype <- readRDS("~/UKBB/data/LDL/phenotype/dat_LDL_British_Irish.rds")
+
+geno_dir <- "./data/geno/"
+phenotype_irish <- phenotype %>% filter(ethnicity == "Irish")
+extracted_geno_data_irish_gwas <- read_genotype_data(phenotype_irish, geno_dir, irish_gwas_results$results)
+dim(extracted_geno_data_irish_gwas)
+saveRDS(phenotype, file = "/fastscratch/myscratch/xding/UKBB/irish_gwas/dat_LDL_Irish_pheotype_genotype_irish_gwas_all_snps_p0005.rds")
+
+
+phenotype_british <- phenotype %>% filter(ethnicity == "British")
+
+extracted_geno_data_british_gwas <- read_genotype_data(phenotype_british, geno_dir, british_gwas_results$results)
+dim(extracted_geno_data_british_gwas)
+saveRDS(extracted_geno_data_irish_gwas, file = "/fastscratch/myscratch/xding/UKBB/british_gwas/dat_LDL_British_pheotype_genotype_british_gwas_all_snps_p0005.rds")
+
+
+#################################### GWAS P-value < 0.005 ######################################
+irish_gwas_results <- process_gwas_results("./data/LDL/GWAS/output/hapmap3_snp/", "irish", P_value_thred = 0.005)
+irish_gwas_results$snp_count
+
+chr_snp_list <- irish_gwas_results$results
+phenotype <- readRDS("~/UKBB/data/LDL/phenotype/dat_LDL_British_Irish.rds")
+
+geno_dir <- "./data/geno/"
+extracted_geno_data_irish_gwas <- read_genotype_data(phenotype, geno_dir, irish_gwas_results$results)
+dim(extracted_geno_data_irish_gwas)
+saveRDS(phenotype, file = "/fastscratch/myscratch/xding/UKBB/irish_gwas/dat_LDL_British_Irish_pheotype_genotype_irish_gwas_all_snps_p005.rds")
 

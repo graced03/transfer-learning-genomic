@@ -83,7 +83,7 @@ geno_path <- "./data/geno/"
 
 for (i in 1:22){
   chr <- paste0("chr", as.character(i))
-  psam_path <- paste0(geno_path,chr,".psam")
+  psam_path <- paste0(geno_path, chr,".psam")
   sample_data <- fread(psam_path)
 
   pgen_path <- paste0(geno_path,chr,".pgen")
