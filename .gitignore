@@ -3,3 +3,8 @@
 .RData
 .Ruserdata
 .DS_Store
+./batch_logs
+.*log
+.*err
+./data
+R/.ipynb_checkpoints
