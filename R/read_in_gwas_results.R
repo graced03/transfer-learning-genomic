@@ -1,7 +1,7 @@
 library(data.table)
 library(readr)
 
-# data <- fread("./data/LDL/GWAS/output/hapmap3_snp/irish_snp_assoc/plink_gwas_ldl_irish_chr1.assoc.LDL.glm.linear", 
+# data <- fread("./data/LDL/GWAS/output/hapmap3_snp/irish_snp_assoc/plink_gwas_ldl_irish_chr1.assoc.LDL.glm.linear",
 #               sep = "\t", na.strings = "")
 # View(data %>% filter(P <= 0.0005))
 
@@ -31,7 +31,7 @@ phenotype <- readRDS("~/UKBB/data/LDL/phenotype/dat_LDL_British_Irish.rds")
 geno_dir <- "./data/geno/"
 phenotype_irish <- phenotype %>% filter(ethnicity == "Irish")
 extracted_geno_data_irish_gwas <- read_genotype_data(phenotype_irish, geno_dir, irish_gwas_results$results)
-dim(extracted_geno_data_irish_gwas)
+
 saveRDS(phenotype, file = "/fastscratch/myscratch/xding/UKBB/irish_gwas/dat_LDL_Irish_pheotype_genotype_irish_gwas_all_snps_p0005.rds")
 
 
@@ -52,5 +52,5 @@ phenotype <- readRDS("~/UKBB/data/LDL/phenotype/dat_LDL_British_Irish.rds")
 geno_dir <- "./data/geno/"
 extracted_geno_data_irish_gwas <- read_genotype_data(phenotype, geno_dir, irish_gwas_results$results)
 dim(extracted_geno_data_irish_gwas)
-saveRDS(phenotype, file = "/fastscratch/myscratch/xding/UKBB/irish_gwas/dat_LDL_British_Irish_pheotype_genotype_irish_gwas_all_snps_p005.rds")
+saveRDS(extracted_geno_data_irish_gwas, file = "/fastscratch/myscratch/xding/UKBB/irish_gwas/dat_LDL_British_Irish_pheotype_genotype_irish_gwas_all_snps_p005.rds")
 
