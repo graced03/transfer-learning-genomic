@@ -1,0 +1,150 @@
+---
+title: "Baseline Regressions"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(glmnet)
+library(data.table)
+library(dplyr)
+
+if (!require(biglm)) install.packages("biglm")
+library(biglm)
+library(Matrix)
+```
+
+### Regression on SNPS
+
+```{r}
+
+extracted_geno_data_british_gwas <- readRDS(file = "~/Documents/UKBB/british_gwas/dat_LDL_British_pheotype_genotype_british_gwas_all_snps_p0005.rds")
+dim(extracted_geno_data_british_gwas)
+# 338389  12492
+
+complete_cases <- complete.cases(extracted_geno_data_british_gwas)
+extracted_geno_data_british_gwas <- extracted_geno_data_british_gwas[complete_cases, ]
+extracted_geno_data_british_gwas$sex <- as.numeric(extracted_geno_data_british_gwas$sex) - 1
+
+X_british <- extracted_geno_data_british_gwas %>%
+  select(-IID, -`#FID`, -ethnicity, -LDL, -used.in.pca.calculation)
+X_british <- as.matrix(X_british)
+y_british <- extracted_geno_data_british_gwas$LDL
+
+dim(X_british)
+# 338282  12487
+
+saveRDS(y_british, "~/Documents/UKBB/british_gwas/y_british.rds")
+saveRDS(X_british, "~/Documents/UKBB/british_gwas/X_british.rds")
+
+```
+
+```{r}
+formula <- as.formula(paste("y_train ~", paste(colnames(X_train), collapse = " + ")))
+ols_model <- biglm(formula, data = X_train)
+
+```
+
+## British
+
+```{r}
+X_british <- readRDS("~/Documents/UKBB/british_gwas/X_british.rds")
+y_british <- readRDS("~/Documents/UKBB/british_gwas/y_british.rds")
+n_samples <- nrow(X_british)
+british_test_indices <- sample(1:n_samples, size = round(0.1 * n_samples))
+
+# Split the data into training and testing sets
+X_train <- X_british[-british_test_indices, ]
+X_test  <- X_british[british_test_indices, ]
+y_train <- y_british[-british_test_indices]
+y_test  <- y_british[british_test_indices]
+
+dim(X_train)
+length(y_train)
+
+saveRDS(X_train, "~/Documents/UKBB/british_gwas/X_british_train.rds")
+saveRDS(X_test, "~/Documents/UKBB/british_gwas/X_british_test.rds")
+saveRDS(y_train, "~/Documents/UKBB/british_gwas/y_british_train.rds")
+saveRDS(y_test, "~/Documents/UKBB/british_gwas/y_british_test.rds")
+
+
+```
+
+
+```{r}
+X_train <- readRDS("~/Documents/UKBB/british_gwas/X_british_train.rds")
+X_test <- readRDS("~/Documents/UKBB/british_gwas/X_british_test.rds")
+y_train <- readRDS("~/Documents/UKBB/british_gwas/y_british_train.rds")
+y_test <- readRDS("~/Documents/UKBB/british_gwas/y_british_test.rds")
+
+cv_ridge <- cv.glmnet(as.matrix(X_train), y_train, alpha = 0)
+best_lambda <- cv_ridge$lambda.min
+# 0.08185971
+
+best_lambda <- 0.02
+
+# Fit the final Ridge regression model using the best lambda
+final_ridge_model <- glmnet(as.matrix(X_train), y_train, alpha = 0, lambda = best_lambda)
+
+
+summary(final_ridge_model)
+
+# Make predictions on the test set for Ridge model
+y_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_test))
+
+y_train_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_train))
+
+# Calculate MSE for Ridge regression model
+mse_ridge <- mean((y_test - y_pred_ridge)^2)
+mse_train_ridge <- mean((y_train - y_train_pred_ridge)^2)
+
+R_sq_test <- 1 - sum((y_test - y_pred_ridge)^2) / sum((y_test - mean(y_test))^2)
+R_sq_train <- 1 - sum((y_train - y_train_pred_ridge)^2) / sum((y_train - mean(y_train))^2)
+
+cat("Mean Squared Error for Ridge regression on the test set:", mse_train_ridge, "\n")
+cat("R Squared Ridge regression on the test set:", R_sq_train, "\n")
+
+cat("Mean Squared Error for Ridge regression on the test set:", mse_ridge, "\n")
+cat("R Squared Ridge regression on the test set:", R_sq_test, "\n")
+
+
+hist(as.numeric(final_ridge_model$beta))
+
+min(abs(final_ridge_model$beta))
+
+```
+
+
+```{r}
+cv_lasso <- cv.glmnet(as.matrix(X_train), y_train, alpha = 1)
+best_lambda <- cv_lasso$lambda.min
+
+# Fit the final lasso regression model using the best lambda
+final_lasso_model <- glmnet(as.matrix(X_train), y_train, alpha = 1, lambda = best_lambda)
+
+# Make predictions on the test set for lasso model
+y_pred_lasso <- predict(final_lasso_model, newx = as.matrix(X_test))
+y_train_pred_lasso <- predict(final_lasso_model, newx = as.matrix(X_train))
+
+# Calculate MSE for lasso regression model
+mse_train_lasso <- mean((y_train - y_train_pred_lasso)^2)
+mse_lasso <- mean((y_test - y_pred_lasso)^2)
+
+R_sq_train <- 1 - sum((y_train - y_train_pred_lasso)^2) / sum((y_train - mean(y_train))^2)
+# Adj_R_sq_train <- 1 - ((1 - R_sq_train) * (n - 1)) / (n - p - 1)
+
+R_sq_test <- 1 - sum((y_test - y_pred_lasso)^2) / sum((y_test - mean(y_test))^2)
+
+cat("Mean Squared Error for lasso regression on the train set:", mse_train_lasso, "\n")
+cat("R Squared lasso regression on the train set:", R_sq_train, "\n")
+
+cat("Mean Squared Error for lasso regression on the test set:", mse_lasso, "\n")
+cat("R Squared lasso regression on the test set:", R_sq_test, "\n")
+
+
+hist(as.numeric(final_lasso_model$beta))
+
+
+```
+
+
