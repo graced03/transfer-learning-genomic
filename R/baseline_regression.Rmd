@@ -8,16 +8,27 @@ knitr::opts_chunk$set(echo = TRUE)
 library(glmnet)
 library(data.table)
 library(dplyr)
+
+if (!require(biglm)) install.packages("biglm")
+library(biglm)
+library(Matrix)
 ```
 
 ### Regression on SNPS
 
 ```{r}
 
-extracted_geno_data_irish_gwas <- readRDS(file = "/fastscratch/myscratch/xding/UKBB/irish_gwas/dat_LDL_British_Irish_pheotype_genotype_irish_gwas_all_snps_p005.rds")
+extracted_geno_data_irish_gwas <- readRDS(file = "~/Documents/UKBB/irish_gwas/irish_gwass_all_snps_p005/dat_LDL_British_Irish_pheotype_genotype_irish_gwas_all_snps_p005.rds")
 dim(extracted_geno_data_irish_gwas)
 
+
+complete_cases <- complete.cases(extracted_geno_data_irish_gwas)
+
+
+
+extracted_geno_data_irish_gwas <- extracted_geno_data_irish_gwas[complete_cases, ]
 extracted_geno_data_irish_gwas$sex <- as.numeric(extracted_geno_data_irish_gwas$sex) - 1
+
 
 phenotype_british <- extracted_geno_data_irish_gwas[which(extracted_geno_data_irish_gwas$ethnicity == "British"),]
 phenotype_irish <- extracted_geno_data_irish_gwas[which(extracted_geno_data_irish_gwas$ethnicity == "Irish"),]
@@ -27,41 +38,482 @@ X_british <- phenotype_british %>%
 X_irish <- phenotype_irish %>%
   select(-IID, -`#FID`, -ethnicity, -LDL, -used.in.pca.calculation)
 
+X_irish[!complete.cases(X_irish), ]
+
 y_british <- phenotype_british$LDL
 y_irish <- phenotype_irish$LDL
 
-complete_cases <- complete.cases(X_british, y_british)
+X_british <- as.matrix(X_british)
+X_irish <- as.matrix(X_irish)
 
-# Subset the data to only include complete cases
-X_british_complete <- X_british[complete_cases, ]
-y_british_complete <- y_british[complete_cases]
+dim(X_british)
+dim(X_irish)
 
-n_samples <- nrow(X_british_complete)
-british_test_indices <- sample(1:n_samples, size = round(0.1 * n_samples))
+colSums(is.na(X_irish)) == 0
+
+saveRDS(y_british, "~/Documents/UKBB/irish_gwas/irish_gwass_all_snps_p005/y_british.rds")
+saveRDS(y_irish, "~/Documents/UKBB/irish_gwas/irish_gwass_all_snps_p005/y_irish.rds")
+
+saveRDS(X_british, "~/Documents/UKBB/irish_gwas/irish_gwass_all_snps_p005/X_british.rds")
+saveRDS(X_irish, "~/Documents/UKBB/irish_gwas/irish_gwass_all_snps_p005/X_irish.rds")
+
+
+
+```
+
+
+## Irish
+
+```{r}
+cv_ridge <- cv.glmnet(X_irish_centered, y_irish_centered, alpha = 0)
+best_lambda <- cv_ridge$lambda.min
+# best_lambda <- 0.67
+final_ridge_model <- glmnet(X_irish_centered, y_irish_centered, alpha = 0, lambda = best_lambda)
+
+irish_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_irish_centered))
+
+pred <- final_ridge_model$a0 + X_irish_centered %*% final_ridge_model$beta
+
+cor(pred[,1], y_irish_centered, method = "pearson") ^ 2
+# 0.6734959
+
+
+# Calculate MSE for Ridge regression model
+mse_train_ridge <- mean((y_irish - irish_pred_ridge)^2)
+R_sq_train <- 1 - sum((y_irish - irish_pred_ridge)^2) / sum((y_irish - mean(y_irish))^2)
+mse_train_ridge # 0.247596
+R_sq_train # 0.6583762
+
+cor(irish_pred_ridge, y_irish, method = "pearson") ^ 2
+
+mu <- mean(y_irish)
+
+(sum((y_irish_centered - pred)^2) + sum((pred - mu)^2)) / sum((y_irish_centered - mu)^2)
+
+mean(y_irish_centered)
+mean(pred)
+
+```
+
+
+
+# ALL
+
+
+```{r}
+set.seed(123)
+# X_irish <- readRDS("~/Documents/UKBB/irish_gwas/irish_gwass_all_snps_p005/X_irish.rds")
+# y_irish <- readRDS("~/Documents/UKBB/irish_gwas/irish_gwass_all_snps_p005/y_irish.rds")
+
+X_irish_centered <- X_irish - matrix(rep(colMeans(X_irish), 
+                                             each = nrow(X_irish)), 
+                                         nrow = nrow(X_irish), 
+                                         byrow = FALSE)
+y_irish_centered <- y_irish - mean(y_irish)
+
+n_samples <- nrow(X_irish_centered)
+irish_test_indices <- sample(1:n_samples, size = round(0.5 * n_samples))
 
 # Split the data into training and testing sets
-X_train <- X_british_complete[-british_test_indices, ]
-X_test  <- X_british_complete[british_test_indices, ]
-y_train <- y_british_complete[-british_test_indices]
-y_test  <- y_british_complete[british_test_indices]
+X_train <- X_irish_centered[-irish_test_indices, ]
+X_test  <- X_irish_centered[irish_test_indices, ]
+y_train <- y_irish_centered[-irish_test_indices]
+y_test  <- y_irish_centered[irish_test_indices]
+
+dim(X_train)
+length(y_train)
+
+
+ols <- lm(y_train ~ X_train[,1:12])
+
+ols_coef <- as.numeric(ols$coefficients)
+summary(ols)
+
+y_train_adj <- y_train - ols$fitted.values
+y_test_cov_eff <- ols_coef[1] + X_test[,1:12] %*% ols_coef[2:length(ols_coef)]
+y_test_adj <- y_test - y_test_cov_effs
+
+```
+
+
+
+```{r}
+cv_ridge <- cv.glmnet(as.matrix(X_train), y_train_adj, alpha = 0)
+best_lambda <- cv_ridge$lambda.min
+# 0.665519
+best_lambda
+```
+
+
+```{r}
+# best_lambda
+best_lambda <- 1.063589
+
+# Fit the final Ridge regression model using the best lambda
+final_ridge_model <- glmnet(as.matrix(X_train), y_train_adj, alpha = 0, lambda = best_lambda)
+
+# Make predictions on the test set for Ridge model
+y_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_test))
+
+y_train_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_train))
+
+# Calculate MSE for Ridge regression model
+mse_ridge <- mean((y_test_adj - y_pred_ridge)^2)
+mse_train_ridge <- mean((y_train_adj - y_train_pred_ridge)^2)
+
+R_sq_train <- cor(y_train_adj, y_train_pred_ridge) ^ 2
+R_sq_test <- cor(y_test_adj, y_pred_ridge) ^ 2
+
+
+cat("Mean Squared Error for Ridge regression on the train set:", mse_train_ridge, "\n")
+cat("R Squared Ridge regression on the train set:", R_sq_train, "\n")
+
+cat("Mean Squared Error for Ridge regression on the test set:", mse_ridge, "\n")
+cat("R Squared Ridge regression on the test set:", R_sq_test, "\n")
+
+# Mean Squared Error for Ridge regression on the test set: 0.2426927 
+# R Squared Ridge regression on the test set: 0.6651027 
+# Mean Squared Error for Ridge regression on the test set: 0.3353812 
+# R Squared Ridge regression on the test set: 0.5375859 
+
+hist(as.numeric(final_ridge_model$beta))
+
+high_ldl_ind <- which(y_test_adj > 2)
+low_ldl_ind <- which(y_test_adj < 2)
+
+cor(y_test_adj[high_ldl_ind], y_pred_ridge[high_ldl_ind])^2
+cor(y_test_adj[low_ldl_ind], y_pred_ridge[low_ldl_ind])^2
+cor(y_test_adj, y_pred_ridge)^2
+
+
+mean((y_test_adj[high_ldl_ind] - y_pred_ridge[high_ldl_ind])^2)
+mean((y_test_adj[low_ldl_ind] - y_pred_ridge[low_ldl_ind])^2)
+mean((y_test_adj - y_pred_ridge)^2)
+
+
+
+cbind(y_test_adj, y_pred_ridge)
+
+cor(y_test_adj, y_pred_ridge)^2
+
+
+```
+
+# LOW LDL
+
+```{r}
+X_irish_low <- X_irish[y_irish < 4.033,]
+y_irish_low <- y_irish[y_irish < 4.033]
+
+X_irish_centered <- X_irish_low - matrix(rep(colMeans(X_irish_low), 
+                                             each = nrow(X_irish_low)), 
+                                         nrow = nrow(X_irish_low), 
+                                         byrow = FALSE)
+y_irish_centered <- y_irish_low - mean(y_irish_low)
+
 
 ```
 
 
 ```{r}
-ols_model <- lm(y_train ~ ., data = X_train)
-# summary(ols_model)
+set.seed(123)
+# X_irish <- readRDS("~/Documents/UKBB/irish_gwas/irish_gwass_all_snps_p005/X_irish.rds")
+# y_irish <- readRDS("~/Documents/UKBB/irish_gwas/irish_gwass_all_snps_p005/y_irish.rds")
 
+n_samples <- nrow(X_irish_centered)
+irish_test_indices <- sample(1:n_samples, size = round(0.5 * n_samples))
 
-y_train_pred_ols <- predict(ols_model, newdata = X_train)
-train_mse_ols <- mean((y_train - y_train_pred_ols)^2)
+# Split the data into training and testing sets
+X_train <- X_irish_centered[-irish_test_indices, ]
+X_test  <- X_irish_centered[irish_test_indices, ]
+y_train <- y_irish_centered[-irish_test_indices]
+y_test  <- y_irish_centered[irish_test_indices]
 
-# Calculate MSE for OLS model
-y_pred_ols <- predict(ols_model, newdata = X_test)
-mse_ols <- mean((y_test - y_pred_ols)^2)
+dim(X_train)
+length(y_train)
 
-R_sq_train <- 1 - sum((y_train - y_train_pred_ols)^2) / sum((y_train - mean(y_train))^2)
-
-R_sq_test <- 1 - sum((y_test - y_pred_ols)^2) / sum((y_test - mean(y_test))^2)
 
 ```
+
+
+```{r}
+cv_ridge <- cv.glmnet(as.matrix(X_train), y_train, alpha = 0)
+best_lambda <- cv_ridge$lambda.min
+# 0.665519
+best_lambda
+```
+
+
+```{r}
+# best_lambda
+# best_lambda <- 0.665519
+
+# Fit the final Ridge regression model using the best lambda
+final_ridge_model <- glmnet(as.matrix(X_train), y_train, alpha = 0, lambda = best_lambda)
+
+
+# Make predictions on the test set for Ridge model
+y_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_test))
+
+y_train_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_train))
+
+# Calculate MSE for Ridge regression model
+mse_ridge <- mean((y_test - y_pred_ridge)^2)
+mse_train_ridge <- mean((y_train - y_train_pred_ridge)^2)
+
+R_sq_test <- 1 - sum((y_test - y_pred_ridge)^2) / sum((y_test - mean(y_test))^2)
+R_sq_train <- 1 - sum((y_train - y_train_pred_ridge)^2) / sum((y_train - mean(y_train))^2)
+
+cat("Mean Squared Error for Ridge regression on the train set:", mse_train_ridge, "\n")
+cat("R Squared Ridge regression on the train set:", R_sq_train, "\n")
+
+cat("Mean Squared Error for Ridge regression on the test set:", mse_ridge, "\n")
+cat("R Squared Ridge regression on the test set:", R_sq_test, "\n")
+
+# Mean Squared Error for Ridge regression on the test set: 0.2426927 
+# R Squared Ridge regression on the test set: 0.6651027 
+# Mean Squared Error for Ridge regression on the test set: 0.3353812 
+# R Squared Ridge regression on the test set: 0.5375859 
+
+hist(as.numeric(final_ridge_model$beta))
+
+```
+
+
+# HIGH LDL
+
+```{r}
+X_irish_high <- X_irish[y_irish >= 4.033,]
+y_irish_high <- y_irish[y_irish >= 4.033]
+
+X_irish_centered <- X_irish_high - matrix(rep(colMeans(X_irish_high), 
+                                             each = nrow(X_irish_high)), 
+                                         nrow = nrow(X_irish_high), 
+                                         byrow = FALSE)
+y_irish_centered <- y_irish_high - mean(y_irish_high)
+
+
+```
+
+
+
+```{r}
+# best_lambda
+# best_lambda <- 0.665519
+
+cv_ridge <- cv.glmnet(as.matrix(X_train), y_train, alpha = 1)
+best_lambda <- cv_ridge$lambda.min
+
+# Fit the final Ridge regression model using the best lambda
+final_lasso_model <- glmnet(as.matrix(X_train), y_train, alpha = 1, lambda = best_lambda)
+
+# Make predictions on the test set for Ridge model
+y_pred_ridge <- predict(final_lasso_model, newx = as.matrix(X_test))
+
+y_train_pred_ridge <- predict(final_lasso_model, newx = as.matrix(X_train))
+
+# Calculate MSE for Ridge regression model
+mse_ridge <- mean((y_test - y_pred_ridge)^2)
+mse_train_ridge <- mean((y_train - y_train_pred_ridge)^2)
+
+R_sq_test <- 1 - sum((y_test - y_pred_ridge)^2) / sum((y_test - mean(y_test))^2)
+R_sq_train <- 1 - sum((y_train - y_train_pred_ridge)^2) / sum((y_train - mean(y_train))^2)
+
+cat("Mean Squared Error for Ridge regression on the train set:", mse_train_ridge, "\n")
+cat("R Squared Ridge regression on the train set:", R_sq_train, "\n")
+
+cat("Mean Squared Error for Ridge regression on the test set:", mse_ridge, "\n")
+cat("R Squared Ridge regression on the test set:", R_sq_test, "\n")
+
+# Mean Squared Error for Ridge regression on the train set: 0.1861888 
+# R Squared Ridge regression on the train set: 0.7477003 
+# Mean Squared Error for Ridge regression on the test set: 0.415897 
+# R Squared Ridge regression on the test set: 0.4154992 
+
+hist(as.numeric(final_lasso_model$beta))
+
+```
+
+```{r}
+# View(X_train)
+
+n_samples <- nrow(X_train)
+sub_train_indices <- sample(1:n_samples, size = round(0.4 * n_samples))
+X_train_sub <- X_train[sub_train_indices, ]
+y_train_sub  <- y_train[sub_train_indices]
+
+cv_ridge <- cv.glmnet(X_train_sub, y_train_sub, alpha = 0)
+best_lambda <- cv_ridge$lambda.min
+best_lambda
+
+dim(X_train_sub)
+```
+
+
+
+```{r}
+
+
+# Fit the final Ridge regression model using the best lambda
+final_ridge_model <- glmnet(as.matrix(X_train_sub), y_train_sub, alpha = 0, lambda = best_lambda)
+
+# Make predictions on the test set for Ridge model
+y_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_test))
+
+y_train_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_train_sub))
+
+# Calculate MSE for Ridge regression model
+mse_ridge <- mean((y_test - y_pred_ridge)^2)
+mse_train_ridge <- mean((y_train_sub - y_train_pred_ridge)^2)
+
+R_sq_test <- 1 - sum((y_test - y_pred_ridge)^2) / sum((y_test - mean(y_test))^2)
+R_sq_train <- 1 - sum((y_train_sub - y_train_pred_ridge)^2) / sum((y_train_sub - mean(y_train))^2)
+
+cat("Mean Squared Error for Ridge regression on the train set:", mse_train_ridge, "\n")
+cat("R Squared Ridge regression on the train set:", R_sq_train, "\n")
+
+cat("Mean Squared Error for Ridge regression on the test set:", mse_ridge, "\n")
+cat("R Squared Ridge regression on the test set:", R_sq_test, "\n")
+
+# Mean Squared Error for Ridge regression on the test set: 0.2426927 
+# R Squared Ridge regression on the test set: 0.6651027 
+# Mean Squared Error for Ridge regression on the test set: 0.3353812 
+# R Squared Ridge regression on the test set: 0.5375859 
+
+hist(as.numeric(final_ridge_model$beta))
+
+```
+
+
+
+## Select sig coef retrain
+
+
+```{r}
+ridge_est_coef <- as.matrix(final_ridge_model$beta)
+ridge_est_coef <- as.data.frame(ridge_est_coef)
+colnames(ridge_est_coef) <- "coef"
+ridge_est_coef_sig <- ridge_est_coef %>% filter(abs(coef) > 0.005)
+
+View(ridge_est_coef_sig)
+sig_snps <- rownames(ridge_est_coef_sig)
+length(sig_snps)
+# 2284
+
+X_train_sub <- X_train %>% select(all_of(sig_snps))
+X_test_sub <- X_test %>% select(all_of(sig_snps))
+
+lm <- lm(y_train ~ ., data = X_train_sub)
+summary(lm)
+# Residual standard error: 0.6102 on 8125 degrees of freedom
+# Multiple R-squared:  0.5419,	Adjusted R-squared:  0.4863 
+# F-statistic: 9.756 on 985 and 8125 DF,  p-value: < 2.2e-16
+
+y_test_pred_ols <- predict(lm, newdata = X_test_sub)
+
+mse_ridge <- mean((y_test - y_test_pred_ols)^2)
+# 0.4903263
+R_sq_test <- 1 - sum((y_test - y_test_pred_ols)^2) / sum((y_test - mean(y_test))^2)
+# 0.323952
+
+intcpt <- final_ridge_model$a0
+
+X_test_sub <- as.matrix(X_test_sub)
+ridge_est_coef_sig$coef <- as.numeric(ridge_est_coef_sig$coef)
+
+y_test_pred_ridge_sig <- X_test_sub %*% ridge_est_coef_sig$coef + intcpt
+
+mse_ridge <- mean((y_test - y_test_pred_ridge_sig)^2)
+# 0.4259107
+R_sq_test <- 1 - sum((y_test - y_test_pred_ridge_sig)^2) / sum((y_test - mean(y_test))^2)
+# 0.4127665
+
+```
+
+
+
+
+
+```{r}
+ridge_est_coef <- as.matrix(final_ridge_model$beta)
+ridge_est_coef <- as.data.frame(ridge_est_coef)
+colnames(ridge_est_coef) <- "coef"
+ridge_est_coef_sig <- ridge_est_coef %>% filter(abs(coef) > 0.01)
+
+sig_snps <- rownames(ridge_est_coef_sig)
+length(sig_snps)
+
+X_train_sub <- X_train %>% select(all_of(sig_snps))
+X_test_sub <- X_test %>% select(all_of(sig_snps))
+
+lm <- lm(y_train ~ ., data = X_train_sub)
+summary(lm)
+# Residual standard error: 0.6102 on 8125 degrees of freedom
+# Multiple R-squared:  0.5419,	Adjusted R-squared:  0.4863 
+# F-statistic: 9.756 on 985 and 8125 DF,  p-value: < 2.2e-16
+
+y_test_pred_ols <- predict(lm, newdata = X_test_sub)
+
+mse_ridge <- mean((y_test - y_test_pred_ols)^2)
+# 0.5175844
+R_sq_test <- 1 - sum((y_test - y_test_pred_ols)^2) / sum((y_test - mean(y_test))^2)
+# 0.2863695
+```
+
+
+
+```{r}
+lasso_est_coef <- as.matrix(final_lasso_model$beta)
+lasso_est_coef <- as.data.frame(lasso_est_coef)
+colnames(lasso_est_coef) <- "coef"
+lasso_est_coef_sig <- lasso_est_coef %>% filter(abs(coef) > 0.001)
+
+View(lasso_est_coef_sig)
+sig_snps <- rownames(lasso_est_coef_sig)
+length(sig_snps)
+# 1867
+
+X_train_sub <- X_train[,sig_snps]
+X_test_sub <- X_test[,sig_snps]
+
+lm <- lm(y_train ~ X_train_sub)
+summary(lm)
+
+# Residual standard error: 0.5082 on 3198 degrees of freedom
+# Multiple R-squared:  0.7788,	Adjusted R-squared:  0.6501 
+# F-statistic: 6.048 on 1862 and 3198 DF,  p-value: < 2.2e-16
+
+coef <- as.numeric(lm$coefficients)
+
+View(lm$coefficients)
+
+y_test_pred_lasso_sig <- X_test_sub %*% lasso_est_coef_sig$coef
+mse_lasso <- mean((y_test - y_test_pred_lasso_sig)^2)
+# 0.4903263
+R_sq_test <- 1 - sum((y_test - y_test_pred_lasso_sig)^2) / sum((y_test - mean(y_test))^2)
+# 0.323952
+
+y_test_pred_ols <- X_test_sub %*% coef[2:length(coef)] + coef[1]
+
+mse_lasso <- mean((y_test - y_test_pred_ols)^2)
+# 0.4903263
+R_sq_test <- 1 - sum((y_test - y_test_pred_ols)^2) / sum((y_test - mean(y_test))^2)
+# 0.323952
+
+intcpt <- final_lasso_model$a0
+
+X_test_sub <- as.matrix(X_test_sub)
+lasso_est_coef_sig$coef <- as.numeric(lasso_est_coef_sig$coef)
+
+y_test_pred_lasso_sig <- X_test_sub %*% lasso_est_coef_sig$coef + intcpt
+
+mse_lasso <- mean((y_test - y_test_pred_lasso_sig)^2)
+# 0.4259107
+R_sq_test <- 1 - sum((y_test - y_test_pred_lasso_sig)^2) / sum((y_test - mean(y_test))^2)
+# 0.4127665
+
+```
+
+
+
+

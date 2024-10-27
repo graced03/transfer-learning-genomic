@@ -18,7 +18,7 @@ library(Matrix)
 
 ```{r}
 
-extracted_geno_data_british_gwas <- readRDS(file = "~/Documents/UKBB/british_gwas/dat_LDL_British_pheotype_genotype_british_gwas_all_snps_p0005.rds")
+extracted_geno_data_british_gwas <- readRDS(file = "~/Documents/UKBB/british_gwas/british_gwas_all_snps_p0005/dat_LDL_British_pheotype_genotype_british_gwas_all_snps_p0005.rds")
 dim(extracted_geno_data_british_gwas)
 # 338389  12492
 
@@ -72,27 +72,31 @@ saveRDS(y_test, "~/Documents/UKBB/british_gwas/y_british_test.rds")
 
 
 ```{r}
-X_train <- readRDS("~/Documents/UKBB/british_gwas/X_british_train.rds")
-X_test <- readRDS("~/Documents/UKBB/british_gwas/X_british_test.rds")
-y_train <- readRDS("~/Documents/UKBB/british_gwas/y_british_train.rds")
-y_test <- readRDS("~/Documents/UKBB/british_gwas/y_british_test.rds")
+X_train <- readRDS("~/Documents/UKBB/british_gwas/british_gwas_all_snps_p0005/X_british_train.rds")
+X_test <- readRDS("~/Documents/UKBB/british_gwas/british_gwas_all_snps_p0005/X_british_test.rds")
+y_train <- readRDS("~/Documents/UKBB/british_gwas/british_gwas_all_snps_p0005/y_british_train.rds")
+y_test <- readRDS("~/Documents/UKBB/british_gwas/british_gwas_all_snps_p0005/y_british_test.rds")
 
-cv_ridge <- cv.glmnet(as.matrix(X_train), y_train, alpha = 0)
-best_lambda <- cv_ridge$lambda.min
+# cv_ridge <- cv.glmnet(as.matrix(X_train), y_train, alpha = 0)
+# best_lambda <- cv_ridge$lambda.min
 # 0.08185971
 
-best_lambda <- 0.02
+# Fit the final Ridge regression model using the best lambda
+# final_ridge_model <- glmnet(as.matrix(X_train), y_train, alpha = 0, lambda = best_lambda)
 
+
+# cv_ridge <- cv.glmnet(as.matrix(X_test), y_test, alpha = 0)
+# best_lambda <- cv_ridge$lambda.min
+# best_lambda <- 1.228873
+
+best_lambda <- 0.08185971
 # Fit the final Ridge regression model using the best lambda
 final_ridge_model <- glmnet(as.matrix(X_train), y_train, alpha = 0, lambda = best_lambda)
 
 
-summary(final_ridge_model)
-
 # Make predictions on the test set for Ridge model
-y_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_test))
-
-y_train_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_train))
+# y_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_test))
+# y_train_pred_ridge <- predict(final_ridge_model, newx = as.matrix(X_train))
 
 # Calculate MSE for Ridge regression model
 mse_ridge <- mean((y_test - y_pred_ridge)^2)
