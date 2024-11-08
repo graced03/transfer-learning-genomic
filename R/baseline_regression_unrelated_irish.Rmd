@@ -1,0 +1,274 @@
+---
+title: "Baseline Regressions"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(glmnet)
+library(data.table)
+library(dplyr)
+
+if (!require(biglm)) install.packages("biglm")
+library(biglm)
+library(Matrix)
+```
+
+
+### Regression on SNPS
+
+```{r}
+source("~/UKBB/R/helpers/read_data.R")
+getwd()
+irish_clumped_snps_LDL <- process_clumped_snps("/users/xding/UKBB/data/LDL/clump/unrelated_irish_snp_clump/", "irish", "LDL", chromosomes = 1:22)
+irish_clumped_snps_LDL$snp_count
+selected_snps <- Reduce(c, irish_clumped_snps_LDL$chr_snp_list)
+```
+
+
+
+```{r}
+chr_snp_list <- irish_gwas_results_height$results
+
+cov <- read.delim(file = "./data/LDL/GWAS/input/cov_LDL_unrelated_Irish.txt", header = TRUE, sep = "\t")
+pheno <- read.delim(file = "./data/LDL/GWAS/input/pheno_LDL_unrelated_Irish.txt", header = TRUE,  sep = "\t")
+phenotype <- merge(cov, pheno, by = c("X.FID","IID"))
+dim(cov)[1] == dim(pheno)[1]
+dim(pheno)[1] == dim(phenotype)[1]
+
+geno_dir <- "./data/geno/"
+extracted_geno_data_irish_gwas <- read_genotype_data(phenotype, geno_dir, chr_snp_list)
+# dim(extracted_geno_data_irish_gwas)
+# View(head(extracted_geno_data_irish_gwas))
+
+saveRDS(extracted_geno_data_irish_gwas, file = "/fastscratch/myscratch/xding/UKBB/irish_gwas/dat_LDL_unrelated_irish_pheotype_genotype_irish_gwas_all_snps_p005.rds")
+
+```
+
+
+
+```{r}
+trait <- "LDL"
+
+# data_path <- paste0("~/Documents/UKBB/irish_gwas/dat_", trait, "_unrelated_irish_pheotype_genotype_irish_gwas_all_snps_p005.rds")
+# extracted_geno_data_irish_gwas <- readRDS(file = data_path)
+
+dim(extracted_geno_data_irish_gwas)
+# 9764 5746
+
+complete_cases <- complete.cases(extracted_geno_data_irish_gwas)
+extracted_geno_data_irish_gwas <- extracted_geno_data_irish_gwas[complete_cases, ]
+extracted_geno_data_irish_gwas$sex <- ifelse(extracted_geno_data_irish_gwas$sex == "Female", 1, 0)
+
+dim(extracted_geno_data_irish_gwas)
+# 9764 5746
+
+```
+
+
+
+```{r}
+
+y_irish <- extracted_geno_data_irish_gwas[,trait]
+X_irish_geno <- extracted_geno_data_irish_gwas[,selected_snps]
+X_irish_cov <- extracted_geno_data_irish_gwas[,3:14]
+
+summary(y_irish)
+sd(y_irish)
+
+hist(y_irish)
+
+```
+
+
+
+```{r}
+summary_stats_geno <- data.frame(
+  Mean = apply(X_irish_geno, 2, mean),
+  Median = apply(X_irish_geno, 2, median),
+  SD = apply(X_irish_geno, 2, sd),
+  Min = apply(X_irish_geno, 2, min),
+  Max = apply(X_irish_geno, 2, max)
+)
+
+summary_stats_cov <- data.frame(
+  Mean = apply(X_irish_cov, 2, mean),
+  Median = apply(X_irish_cov, 2, median),
+  SD = apply(X_irish_cov, 2, sd),
+  Min = apply(X_irish_cov, 2, min),
+  Max = apply(X_irish_cov, 2, max)
+)
+
+hist(summary_stats_geno$Mean)
+
+View(summary_stats_geno)
+```
+
+
+
+
+```{r}
+set.seed(123)
+X_irish_geno_centered <- X_irish_geno - matrix(rep(colMeans(X_irish_geno), 
+                                             each = nrow(X_irish_geno)), 
+                                         nrow = nrow(X_irish_geno), 
+                                         byrow = FALSE)
+X_irish_cov_centered <- X_irish_cov - matrix(rep(colMeans(X_irish_cov), 
+                                             each = nrow(X_irish_cov)), 
+                                         nrow = nrow(X_irish_cov), 
+                                         byrow = FALSE)
+y_irish_centered <- y_irish - mean(y_irish)
+
+```
+
+
+```{r}
+set.seed(123)
+n_samples <- nrow(X_irish_cov_centered)
+irish_test_indices <- sample(1:n_samples, size = round(0.1 * n_samples), replace = FALSE)
+
+# Split the data into training and testing sets
+X_train_cov <- X_irish_cov_centered[-irish_test_indices, ]
+X_test_cov  <- X_irish_cov_centered[irish_test_indices, ]
+
+X_train_geno <- X_irish_geno_centered[-irish_test_indices, ]
+X_test_geno  <- X_irish_geno_centered[irish_test_indices, ]
+
+y_train <- y_irish_centered[-irish_test_indices]
+y_test  <- y_irish_centered[irish_test_indices]
+
+
+X_train_cov <- as.matrix(X_train_cov)
+X_test_cov <- as.matrix(X_test_cov)
+X_train_geno <- as.matrix(X_train_geno)
+X_test_geno <- as.matrix(X_test_geno)
+
+ols <- lm(y_train ~ X_train_cov)
+summary(ols)
+ols_coef <- as.numeric(ols$coefficients)
+
+y_train_adj <- y_train - ols$fitted.values
+y_test_cov_eff <- ols_coef[1] + X_test_cov %*% ols_coef[2:length(ols_coef)]
+y_test_adj <- y_test - y_test_cov_eff
+```
+
+
+
+```{r}
+ols_geno <- lm(y_train_adj ~ X_train_geno)
+ols_geno_coef <- as.numeric(ols_geno$coefficients)
+
+y_test_pred <- ols_geno_coef[1] + X_test_geno %*% ols_geno_coef[2:length(ols_geno_coef)]
+
+cor(y_train_adj, ols_geno$fitted.values, method = "pearson") ^ 2
+cor(y_test_adj, y_test_pred, method = "pearson") ^ 2
+
+R_sq_test <- 1 - sum((y_test_adj - y_test_pred)^2) / sum((y_test_adj - mean(y_test_adj))^2)
+R_sq_train <- 1 - sum((y_train_adj - ols_geno$fitted.values)^2) / sum((y_train_adj - mean(y_train_adj))^2)
+
+cat("OLS R Squared on the train set:", R_sq_train, "\n")
+cat("OLS R Squared on the test set:", R_sq_test, "\n")
+
+summary(abs(ols_geno_coef))
+
+```
+
+### Examine population similarity with selected snps
+
+
+```{r}
+
+# Define function to calculate pairwise cosine similarity
+calculate_similarity <- function(data) {
+  # Normalize each row to unit length
+  norm_data <- data / sqrt(rowSums(data^2))
+  
+  # Compute cosine similarity as dot product between rows
+  similarity_matrix <- norm_data %*% t(norm_data)
+  
+  return(as.matrix(similarity_matrix))
+}
+
+# Example usage
+# Assuming 'data_matrix' is your (10200, 2000) dataset
+# similarity_scores <- calculate_similarity(data_matrix)
+
+sim <- calculate_similarity(rbind(X_train_geno, X_test_geno))
+View(sim)
+
+# Function to find highly similar row pairs
+find_high_similarity_pairs <- function(similarity_matrix, threshold = 0.8) {
+  # Find indices where similarity is above threshold (excluding self-comparisons)
+  high_sim_indices <- which(abs(similarity_matrix) > threshold, arr.ind = TRUE)
+  
+  # Filter out self-comparisons
+  high_sim_indices <- high_sim_indices[high_sim_indices[, 1] != high_sim_indices[, 2], ]
+  
+  # Convert to a data frame for easy viewing
+  high_similarity_pairs <- data.frame(
+    Row1 = high_sim_indices[, 1],
+    Row2 = high_sim_indices[, 2],
+    SimilarityScore = similarity_matrix[high_sim_indices]
+  )
+  
+  # Remove duplicate pairs (e.g., (Row1, Row2) and (Row2, Row1))
+  high_similarity_pairs <- high_similarity_pairs[!duplicated(t(apply(high_similarity_pairs[, 1:2], 1, sort))), ]
+  
+  return(high_similarity_pairs)
+}
+
+# Example usage
+# Set your threshold and call the function on your similarity matrix
+similar_rows <- find_high_similarity_pairs(sim, threshold = 0.12)
+
+View(similar_rows)
+
+
+```
+
+
+```{r, eval=FALSE}
+X_train_all <- cbind(X_train_cov, X_train_geno)
+X_test_all <- cbind(X_test_cov, X_test_geno)
+ols_combined <- lm(y_train ~ X_train_all)
+
+ols_combined_coef <- as.numeric(ols_combined$coefficients)
+y_test_all_pred <- ols_combined_coef[1] + X_test_all %*% ols_combined_coef[2:length(ols_combined_coef)]
+
+cor(y_train, ols_combined$fitted.values, method = "pearson") ^ 2 # 0.876073
+cor(y_test, y_test_all_pred, method = "pearson") ^ 2 # 0.7991735
+
+```
+
+Irish - 10,000
+
+LDL: 1752
+OLS R Squared on the train set: 0.6795314 
+OLS R Squared on the test set: 0.5140002 
+
+Tri: 1816
+OLS R Squared on the train set: 0.6887827 
+OLS R Squared on the test set: 0.5365369 
+
+
+ApoB: 1787
+OLS R Squared on the train set: 0.6881145 
+OLS R Squared on the test set: 0.5234636 
+
+BMI: 1849
+OLS R Squared on the train set: 0.6684839 
+OLS R Squared on the test set: 0.5565138 
+
+HDL: 1879
+OLS R Squared on the train set: 0.7219211 
+OLS R Squared on the test set: 0.5143998 
+
+height: 2187
+OLS R Squared on the train set: 0.7281349 
+OLS R Squared on the test set: 0.5688283 
+
+
+
+British - 300,000
+0.14 LdL
+0.08 BMI

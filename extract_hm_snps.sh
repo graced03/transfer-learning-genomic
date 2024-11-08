@@ -27,12 +27,12 @@ do
     --mind 0.05 \
     --out /users/xding/UKBB/data/geno/chr${chr} \
     --threads 24
-  
+
   plink2 \
     --pfile /users/xding/UKBB/data/geno/chr${chr} \
     --covar /users/xding/UKBB/data/LDL/GWAS/input/cov_LDL_Irish.txt \
     --glm hide-covar --covar-variance-standardize \
-    --out /users/xding/UKBB/data/LDL/GWAS/output/euro_restricted/plink_gwas_ldl_irish_chr${chr}.assoc \
+    --out /users/xding/UKBB/data/LDL/GWAS/output/hapmap3_snp/plink_gwas_ldl_irish_chr${chr}.assoc \
     --pheno /users/xding/UKBB/data/LDL/GWAS/input/pheno_LDL_Irish.txt \
     --no-input-missing-phenotype \
     --snps-only \

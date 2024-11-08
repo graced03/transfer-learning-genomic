@@ -1,0 +1,136 @@
+---
+title: "Create covariate and phenotype datatables"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(stringr)
+library(dplyr)
+```
+
+
+# read in the phenotype file
+
+The file is big and will take time to read in. It will take up to 70G memory.
+
+```{r}
+dat <- readRDS("/dcs05/legacy-dcl01-arking/data/UK_Biobank/static/Phenotype/Downloads/ukbCombined_032022_mortality_covid.rds")
+col_names <- colnames(dat)
+```
+
+
+```{r}
+# Ethnic group
+# Genetic ethnic group, indicates samples who self-identified as 'White British' according to Field 21000
+# and have very similar genetic ancestry based on a principal components analysis of the genotypes.
+geno_ethnic_group_col <- col_names[str_detect(col_names, "22006")]
+
+# first ten principal components
+top_ten_pc_col <- col_names[str_detect(col_names, "22009")][1:10]
+
+# 23405 LDL Cholesterol - NMR metabolomics
+# 30780 LDL direct - Biomarker
+ldl_col <- col_names[str_detect(col_names, "30780")]
+
+# 30640 Apolipoprotein B
+# 23439 Apolipoprotein B
+apob_col <- col_names[str_detect(col_names, "30640")]
+
+# 30760	HDL cholesterol
+hdl_col <- col_names[str_detect(col_names, "30760")]
+
+# 30870	Triglycerides
+tri_col <- col_names[str_detect(col_names, "30870")]
+
+# BMI - 21001
+bmi_col <- col_names[str_detect(col_names, "21001")]
+
+# height - 12144
+height_col <- col_names[str_detect(col_names, "f.50.0.0")]
+# [1] "f.50.0.0"    "f.50.1.0"    "f.50.2.0"   "f.50.3.0"
+# Asthma diagnosis 22127
+asthma <- col_names[str_detect(col_names, "22127")]
+```
+
+# extract traits and save the extracted data
+
+```{r}
+# select the columns to include for the phenotype and covariate file
+all_columns_to_include <- c("f.eid","f.31.0.0", "f.21022.0.0",
+                            "f.21000.0.0",geno_ethnic_group_col,
+                            top_ten_pc_col,
+                            ldl_col[1],
+                            apob_col[1],
+                            hdl_col[1],
+                            tri_col[1],
+                            bmi_col[1],
+                            height_col[1],
+                            asthma[1])
+
+dat_sub <- dat[,all_columns_to_include]
+# rename the columns for readability
+colnames(dat_sub) <- c("IID","sex","age","ethnicity","geno_ethnicity",
+                       paste0("PC",1:10),"LDL","ApoB","HDL","Tri","BMI","height","asthma_diagnosis")
+
+saveRDS(dat_sub, "/users/xding/UKBB/data/UKB_phenotype_add_bmi_height_10312024.rds")
+```
+
+
+# align the phenotype data with genotype data
+
+```{r}
+
+dat <- readRDS("/users/xding/UKBB/data/UKB_phenotype_add_bmi_height_10312024.rds")
+
+phenotype_indicator <- readRDS("/dcs05/legacy-dcl01-arking/data/UK_Biobank/active/pheno/ukbPheno_032022.rds")
+# phenotype_indicator
+dat <- merge(dat, phenotype_indicator[,c('IID','used.in.pca.calculation')], by = "IID", all.x = TRUE)
+
+psam_chr1 <- fread("/dcs05/legacy-dcl01-arking/data/UK_Biobank/static/Genetic/GenotypingArray/Imputed/plink/chr1.psam")
+dat_merged_with_fam <- merge(psam_chr1[,1:2], dat, by = "IID", all.x = TRUE)
+
+```
+
+# extract irish ids
+
+```{r}
+dat_merged_with_fam_irish <- dat_merged_with_fam %>% filter(ethnicity == "Irish")
+
+write.table(dat_merged_with_fam_irish[,1:2], file = "/users/xding/UKBB/data/ethnicity_group_ids/irish.txt", 
+            quote = FALSE, row.names = FALSE, col.names = TRUE, sep = "\t")
+```
+
+write the ids of Irish population, then use plink2 to identify/remove related individuals
+
+# read in the ids of unrelated individuals
+
+```{r}
+irish_not_related_id <- read.table("/fastscratch/myscratch/xding/UKBB/irish_genotype/hapmap3/related_pair_cutoff05.king.cutoff.in.id",
+                                   header=FALSE)
+colnames(irish_not_related_id) <- c("IID", "#FID")
+
+dat_merged_with_fam_irish <- dat_merged_with_fam %>% filter(IID %in% irish_not_related_id$IID)
+
+dat_merged_with_fam_irish <- dat_merged_with_fam_irish %>%
+  filter(used.in.pca.calculation == 1) %>%
+  select(-ethnicity, -geno_ethnicity, -used.in.pca.calculation)
+
+```
+
+
+```{r}
+dat_sub_ldl <- dat_merged_with_fam_irish[,c(2,1,3:15)]
+dat_sub_complete_ldl <- dat_sub_ldl %>%
+  filter_all(all_vars(!is.na(.)))
+
+cov_LDL_unrelated_Irish <- dat_sub_complete_ldl[,1:14]
+pheno_LDL_unrelated_Irish <- dat_sub_complete_ldl[,c(1,2,15)]
+
+write.table(cov_LDL_unrelated_Irish, file = "./data/LDL/GWAS/input/cov_LDL_unrelated_Irish.txt", quote = FALSE, row.names = FALSE, col.names = TRUE, sep = "\t")
+write.table(pheno_LDL_unrelated_Irish, file = "./data/LDL/GWAS/input/pheno_LDL_unrelated_Irish.txt", quote = FALSE, row.names = FALSE, col.names = TRUE, sep = "\t")
+
+```
+
+
