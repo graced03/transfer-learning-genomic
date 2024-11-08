@@ -4,14 +4,15 @@ library(dplyr)
 library(Matrix)
 
 # Define the function with an additional argument for chromosome numbers
-process_gwas_results <- function(data_path, population_name, chromosomes = 1:22, P_value_thred = 0.0005) {
+process_gwas_results <- function(data_path, population_name, trait, chromosomes = 1:22, P_value_thred = 0.0005) {
   gwas_results <- list()
   snp_count <- 0
 
   for (chr in chromosomes) {
     # Read the GWAS SNP table for the specified chromosome
-    gwas_snp_table <- fread(paste0(data_path, population_name, "_snp_assoc/plink_gwas_ldl_", population_name, "_chr",
-                                   as.character(chr), ".assoc.LDL.glm.linear"))
+    gwas_snp_table <- fread(paste0(data_path, population_name, "_snp_assoc/plink_gwas_",trait, "_",
+                                   population_name, "_chr",
+                                   as.character(chr), ".assoc.",trait,".glm.linear"))
 
     # Convert P values to numeric and filter SNPs based on threshold
     gwas_snp_table$P <- as.numeric(gwas_snp_table$P)
@@ -25,13 +26,13 @@ process_gwas_results <- function(data_path, population_name, chromosomes = 1:22,
   return(list(results = gwas_results, snp_count = snp_count))
 }
 
-process_clumped_snps <- function(data_path, population_name, chromosomes = 1:22) {
+process_clumped_snps <- function(data_path, population_name, trait, chromosomes = 1:22) {
   chr_snp_list <- list()
   snp_count <- 0
 
   for (chr in chromosomes) {
     # Read the clumped SNP table for the specified chromosome
-    clump_snp_table <- fread(paste0(data_path, population_name, "_snp_clump/ldl_", population_name, "_chr",
+    clump_snp_table <- fread(paste0(data_path, trait, "_", population_name, "_chr",
                                     as.character(chr), "_plink_clumped.clumps"))
 
     # Store the SNP IDs and update SNP count
