@@ -106,37 +106,24 @@ View(summary_stats_geno)
 
 
 
-
 ```{r}
 set.seed(123)
-X_irish_geno_centered <- X_irish_geno - matrix(rep(colMeans(X_irish_geno), 
-                                             each = nrow(X_irish_geno)), 
-                                         nrow = nrow(X_irish_geno), 
-                                         byrow = FALSE)
-X_irish_cov_centered <- X_irish_cov - matrix(rep(colMeans(X_irish_cov), 
-                                             each = nrow(X_irish_cov)), 
-                                         nrow = nrow(X_irish_cov), 
-                                         byrow = FALSE)
-y_irish_centered <- y_irish - mean(y_irish)
-
-```
-
-
-```{r}
-set.seed(123)
-n_samples <- nrow(X_irish_cov_centered)
+n_samples <- nrow(X_irish_cov)
 irish_test_indices <- sample(1:n_samples, size = round(0.1 * n_samples), replace = FALSE)
 
 # Split the data into training and testing sets
-X_train_cov <- X_irish_cov_centered[-irish_test_indices, ]
-X_test_cov  <- X_irish_cov_centered[irish_test_indices, ]
+X_train_cov <- X_irish_cov[-irish_test_indices, ]
+X_test_cov  <- X_irish_cov[irish_test_indices, ]
 
-X_train_geno <- X_irish_geno_centered[-irish_test_indices, ]
-X_test_geno  <- X_irish_geno_centered[irish_test_indices, ]
+X_train_geno <- X_irish_geno[-irish_test_indices, ]
+X_test_geno  <- X_irish_geno[irish_test_indices, ]
 
-y_train <- y_irish_centered[-irish_test_indices]
-y_test  <- y_irish_centered[irish_test_indices]
+y_train <- y_irish[-irish_test_indices]
+y_test  <- y_irish[irish_test_indices]
 
+y_offset <- mean(y_train)
+y_train <- y_train - y_offset
+y_test <- y_test - y_offset
 
 X_train_cov <- as.matrix(X_train_cov)
 X_test_cov <- as.matrix(X_test_cov)
